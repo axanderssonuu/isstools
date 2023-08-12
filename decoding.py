@@ -572,16 +572,17 @@ class ISTDECO:
             'quality' : fraction_explained[ind],
             'rounds' : round[ind],
             'channels' : channel[ind],
+            'gene_name' : [ self.codebook_parent.entries[id].gene_name for id in target_id[ind] ]
         }
         
         # Add additional codebook items to output
         if codebook_keys is not None:
             if isinstance(codebook_keys, list):
                 for item in codebook_keys:
-                    val =  [self.codebook_parent.entries[item][id] for id in target_id[ind]]
+                    val =  [self.codebook_parent.entries[id].attributes[item] for id in target_id[ind]]
                     out[item] = val                    
             elif isinstance(codebook_keys, str):
-                    val =  [self.codebook_parent.entries[codebook_keys][id] for id in target_id[ind]]
+                    val =  [self.codebook_parent.entries[id].attributes[codebook_keys] for id in target_id[ind]]
                     out[codebook_keys] = val
 
         return out

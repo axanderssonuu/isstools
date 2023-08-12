@@ -7,6 +7,7 @@ deconvolved/
 MIP
 stitched
 syntehtic_images
+decode_batch2.py
 *.json
 TODO.md
 oldcrap
