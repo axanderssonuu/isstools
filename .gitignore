@@ -17,6 +17,7 @@ test_pc.py
 test_io.py
 *.hdf5
 *.pkl
+*.csv
 *.ipynb
 .vscode/
 
