@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import re
 import os
@@ -5,6 +7,8 @@ import shutil
 import tempfile
 import pathlib
 from PIL import Image
+
+from typing import Tuple, Sequence, Dict, Generator, Optional, Callable
 
 Image.MAX_IMAGE_PIXELS = 100000000000000
 
@@ -14,7 +18,7 @@ class IncompleteDatasetError(Exception):
 
 
 
-def mip(output_filepattern, dataset):
+def mip(output_filepattern:str, dataset:ISSDataContainer) -> ISSDataContainer:
     # The iterate dataset allows us to iterate the dataset over stages, rounds and channels.
     for index, small_dataset in dataset.iterate_dataset(iter_stages=True, iter_rounds=True, iter_channels=True):
         # Load the small dataset
@@ -24,21 +28,24 @@ def mip(output_filepattern, dataset):
         # MIP the data
         data = np.squeeze(data).max(axis=0)
         # Save the data
-        print(data.shape)
         imwrite(output_filepattern.format(**index), data)
         # Finally, we unload the images (otherwise we might run oom)
         small_dataset.unload()
 
 
+    # Load the MIP:ed dataset
+    container = ISSDataContainer()
+    container.add_images_from_filepattern(output_filepattern)
+    return container
 
 def imwrite(filename:str,data:np.array):
     rawtiff=Image.fromarray(data)
     rawtiff.save(filename)
 
-def imread(filename:str):
+def imread(filename:str) -> np.ndarray:
     return np.asarray(Image.open(filename))
     
-def project2d(issdataset, project_fun, output_filepattern):
+def project2d(issdataset: ISSDataContainer, project_fun: Callable[[np.ndarray], np.ndarray], output_filepattern: str) -> ISSDataContainer:
     num_stages, num_rounds, num_channels = issdataset.get_dataset_shape()
     for stg in range(num_stages):
         for rnd in range(num_rounds):
@@ -68,7 +75,7 @@ def project2d(issdataset, project_fun, output_filepattern):
     container.add_images_from_filepattern(output_filepattern)
     return container
 
-def stitch_ashlar(output_filepattern, issdataset, stage_locations, reference_channel, maximum_shift=500, filter_sigma=5.0, verbose=True, overlap=0.1):
+def stitch_ashlar(output_filepattern: str, issdataset: ISSDataContainer, stage_locations: Dict[int,Tuple[int,int]], reference_channel: int, maximum_shift:int=500, filter_sigma:float=5.0, verbose:bool=True, overlap:float=0.1) -> ISSDataContainer:
 
     import ashlar.scripts.ashlar as ashlar
     from os import mkdir, symlink
@@ -199,6 +206,10 @@ def stitch_ashlar(output_filepattern, issdataset, stage_locations, reference_cha
     shutil.rmtree(temp_path)
 
 
+    container = ISSDataContainer()
+    container.add_images_from_filepattern(output_filepattern)
+
+    return container
 
 
 class TileIterator:
@@ -234,13 +245,29 @@ class TileIterator:
 
 
 class ISSDataContainer:
+
+        
     def __init__(self):
+
+
+
         self.images = []
         self.image_shape = None  # Store the common image shape
         self.image_dtype = None
         self.loaded_images = None
 
-    def add_image(self, image_files, stage, round, channel):
+    def add_image(self, image_files:str, stage:int, round:int, channel:int) -> ISSDataContainer:
+   
+    
+        if not isinstance(image_files, list) or not all(isinstance(file, str) for file in image_files):
+            raise ValueError("image_files should be a list of strings.")
+        if not isinstance(stage, int):
+            raise ValueError("stage should be an integer.")
+        if not isinstance(round, int):
+            raise ValueError("round should be an integer.")
+        if not isinstance(channel, int):
+            raise ValueError("channel should be an integer.")
+    
         # Assuming the image shape is determined from the first image in the list
         if self.image_shape is None and image_files:
             self.image_shape = self._get_image_shape(image_files[0])
@@ -255,24 +282,28 @@ class ISSDataContainer:
             'loaded': False
         })
     
-    def load(self):
+        return self
+
+    def load(self) -> ISSDataContainer:
+
         for image in self.images:
             # Simulating loading the image into memory
             image['loaded'] = True
         self.loaded_images = self.get_loaded_images_array()
         return self
 
-    def unload(self):
+    def unload(self) -> ISSDataContainer:
+        
         for image in self.images:
             # Simulating loading the image into memory
             image['loaded'] = False
             self.loaded_images = None
         return self
     @property
-    def data(self):
+    def data(self) -> np.ndarray:
         return self.loaded_images
 
-    def select(self, stage=None, round=None, channel=None):
+    def select(self, stage:Optional[int]=None, round:Optional[int]=None, channel:Optional[int]=None) -> ISSDataContainer:
         selected_images = ISSDataContainer()
 
         if stage is not None and isinstance(stage, int):
@@ -302,7 +333,7 @@ class ISSDataContainer:
         
         return selected_images
     
-    def get_loaded_images(self):
+    def get_loaded_images(self) -> np.ndarray:
         loaded_images = []
         
         for image in self.images:
@@ -312,7 +343,7 @@ class ISSDataContainer:
         return loaded_images
     
 
-    def get_dataset_indices(self):
+    def get_dataset_indices(self) -> Tuple[Sequence[int], Sequence[int], Sequence[int]]:
         sets = {}
         keys = ['stage','round','channel']
         for key in keys:
@@ -324,7 +355,7 @@ class ISSDataContainer:
             sets[key] = list(sorted(list(sets[key])))
         return tuple(sets[k] for k in keys)
         
-    def get_loaded_images_array(self):
+    def get_loaded_images_array(self) -> np.ndarray:
         loaded_images = self.get_loaded_images()
         
         if not loaded_images:
@@ -359,10 +390,10 @@ class ISSDataContainer:
         
         return image_array
     
-    def get_dataset_shape(self):        
+    def get_dataset_shape(self) -> Tuple[int, int, int]:        
         return tuple(len(s) for s in self.get_dataset_indices())
     
-    def get_common_image_shape(self):
+    def get_common_image_shape(self) -> Tuple[int, int, int]:
         return self.image_shape
     
     def _get_image_shape(self, image_file):
@@ -392,7 +423,7 @@ class ISSDataContainer:
         return dtype
     
 
-    def is_dataset_complete(self):
+    def is_dataset_complete(self) -> bool:
         if not self.images:
             raise IncompleteDatasetError("Dataset is empty.")
         
@@ -429,7 +460,14 @@ class ISSDataContainer:
         return True
     
 
-    def iterate_tiles(self, tile_width, tile_height):
+    def iterate_tiles(self, tile_width:int, tile_height:int) -> TileIterator:
+  
+                
+        if not isinstance(tile_width, int) or tile_width <= 0:
+            raise ValueError("tile_width should be a positive integer.")
+        if not isinstance(tile_height, int) or tile_height <= 0:
+            raise ValueError("tile_height should be a positive integer.")
+    
         num_staegs, _, _ = self.get_dataset_shape()
         if num_staegs != 1:
             raise ValueError("The number of stages should be 1 for iterating over tiles.")
@@ -441,8 +479,17 @@ class ISSDataContainer:
     
     
 
-    def iterate_dataset(self, iter_stages=False, iter_rounds=False, iter_channels=False):
+    def iterate_dataset(self, iter_stages:bool=False, iter_rounds:bool=False, iter_channels:bool=False) -> Generator[Dict, np.ndarray]:
+
+                
         import itertools
+        if not isinstance(iter_stages, bool):
+            raise ValueError("iter_stages should be a boolean.")
+        if not isinstance(iter_rounds, bool):
+            raise ValueError("iter_rounds should be a boolean.")
+        if not isinstance(iter_channels, bool):
+            raise ValueError("iter_channels should be a boolean.")
+        
         num_stages, num_rounds, num_channels = self.get_dataset_shape()
 
         if iter_stages and iter_rounds and iter_channels:
@@ -475,10 +522,13 @@ class ISSDataContainer:
 
 
 
-    def get_common_dtype(self):
+    def get_common_dtype(self) -> str:
         return self.image_dtype
     
-    def add_images_from_filepattern(self, filepattern):
+    def add_images_from_filepattern(self, filepattern: str) -> ISSDataContainer:
+        if not isinstance(filepattern, str):
+            raise ValueError("filepattern should be a string.")
+        
         search_dir = os.path.dirname(filepattern)
         filename_template = os.path.basename(filepattern)
 
@@ -519,7 +569,7 @@ class ISSDataContainer:
                     print(f"Added {filename}. Stage: {stg}, Round: {rnd}, Channel: {chn}")
 
 
-
+        return self
 
 if __name__ == '__main__':
     # Load ISS data
