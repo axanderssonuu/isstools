@@ -6,6 +6,9 @@ import tempfile
 import pathlib
 from PIL import Image
 
+Image.MAX_IMAGE_PIXELS = 100000000000000
+
+
 class IncompleteDatasetError(Exception):
     pass
 
