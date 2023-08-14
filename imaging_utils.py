@@ -7,7 +7,6 @@ import shutil
 import tempfile
 import pathlib
 from PIL import Image
-
 from typing import Tuple, Sequence, Dict, Generator, Optional, Callable
 
 Image.MAX_IMAGE_PIXELS = 100000000000000

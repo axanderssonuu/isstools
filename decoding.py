@@ -407,7 +407,7 @@ class ISTDECO:
         return out
 
 
-    def get_reads(self, min_integrated_intensity:float=None,min_radius:float=2, min_fraction_explained:float=None, codebook_keys: Optional[List[str]] = None) -> Dict[str,Any]:
+    def get_reads(self, min_integrated_intensity:float=None,min_radius:float=2, min_quality:float=None, codebook_keys: Optional[List[str]] = None) -> Dict[str,Any]:
         """Extract position and type of decoded barcodes. 
 
         Performs a non-max supression to localize decoded barcode in the decoded image data.
@@ -419,16 +419,16 @@ class ISTDECO:
             If set to None, 99.95th percentile of decoded image data is used.
         min_radius : float, optional
             Radius of non-max suppression, by default 2
-        min_fraction_explained : float, optional
+        min_quality : float, optional
             A quality score. If a decoded barcode explains a large portion of observed intensities, 
-            then `min_fraction_explained` is close to 1, and 
+            then `min_quality` is close to 1, and 
             we can consider that barcode as a high-quality barcode. 
             
             If we expect one spot in each of the `nr` number of rounds, and if the maximum Hamming 
             distance between two codes in the codebook is `d_h`, then a good value for
-            min_fraction_explained is `1-d_h/nr`.
+            min_quality is `1-d_h/nr`.
 
-            If set to None, an automatic value for min_fraction_explained is computed.
+            If set to None, an automatic value for min_quality is computed.
         codebook_keys : list, optional
             List of keys in the codebook that are to be included in the output.
             For example, if a codebook item contains the key `gene_name`,
@@ -490,9 +490,9 @@ class ISTDECO:
         if min_radius is not None:
             if min_radius < 0:
                 raise ValueError(f'min_radius must a non-negative number.')
-        if min_fraction_explained is not None:
-            if min_fraction_explained < 0 or min_fraction_explained > 1:
-                raise ValueError('min_fraction_explained must be a non-negative number betweeon 0 and 1.')
+        if min_quality is not None:
+            if min_quality < 0 or min_quality > 1:
+                raise ValueError('min_quality must be a non-negative number betweeon 0 and 1.')
 
         # We do this in numpy land. Mainly so we can use scikit image
         X_numpy = self.barcode_magnitudes.detach().cpu().numpy().copy()
@@ -541,7 +541,7 @@ class ISTDECO:
         barcode_overlaps = np.einsum('mij,nij->mn',codebook_numpy_binary,codebook_numpy_binary)
         np.fill_diagonal(barcode_overlaps, 0)
         barcode_overlaps = np.max(barcode_overlaps, axis=0)
-        fraction_explained = fraction_overlap / n_expected_spots_in_a_barcode
+        quality = fraction_overlap / n_expected_spots_in_a_barcode
 
         # For each detected barcode, compute two strings indicating the round & channel we expect to see
         # fluorescent spots in. The strings are semi-colon separated, for instance
@@ -555,12 +555,12 @@ class ISTDECO:
         
 
 
-        if min_fraction_explained is None:
+        if min_quality is None:
             nrounds = Y_numpy.shape[0]
-            min_fraction_explained = barcode_overlaps / nrounds
-            min_fraction_explained = np.array([min_fraction_explained[id] for id in target_id])
+            min_quality = barcode_overlaps / nrounds
+            min_quality = np.array([min_quality[id] for id in target_id])
 
-        ind = fraction_explained > min_fraction_explained
+        ind = quality > min_quality
         
         # Save everything in a dictionary
         out = {
@@ -569,7 +569,7 @@ class ISTDECO:
             'z' : z[ind],
             'target_id' : target_id[ind],
             'intensity' : intensity[ind],
-            'quality' : fraction_explained[ind],
+            'quality' : quality[ind],
             'rounds' : round[ind],
             'channels' : channel[ind],
             'gene_name' : [ self.codebook_parent.entries[id].gene_name for id in target_id[ind] ]
@@ -630,7 +630,7 @@ def istdeco_decode(
     min_integration_radius:int=3,
     min_integrated_intensity:float=1000,
     niter:int=50,
-    min_fraction_explained:float=None,
+    min_quality:float=None,
     lowpass_sigma:Union[Tuple[float,float],Tuple[float,float,float], None]=None,
     origin:Union[Tuple[float,float],Tuple[float,float,float],None] = None,
     codebook_keys: Optional[List[str]] = None,
@@ -668,16 +668,16 @@ def istdeco_decode(
             Minimum intensity of a decoded barcode (integrated in disk with radius `min_integration_radius`).
             Default 1000. Should 
 
-        min_fraction_explained : float, optional
+        min_quality : float, optional
             A quality score. If a decoded barcode explains a large portion of observed intensities, 
-            then `min_fraction_explained` is close to 1, and 
+            then `min_quality` is close to 1, and 
             we can consider that barcode as a high-quality barcode. 
             
             If we expect one spot in each of the `nr` number of rounds, and if the maximum Hamming 
             distance between two codes in the codebook is `d_h`, then a good value for
-            min_fraction_explained is `1-d_h/nr`.
+            min_quality is `1-d_h/nr`.
 
-            If set to None, an automatic value for min_fraction_explained is computed
+            If set to None, an automatic value for min_quality is computed
             using the above formula.
 
         lowpass_sigma : Union[Tuple[float,float],Tuple[float,float,float]], optional
@@ -757,9 +757,9 @@ def istdeco_decode(
         raise ValueError('`min_integrated_radius` must be atleast 1.')
     if min_integrated_intensity < 0:
         raise ValueError('`min_integrated_intensity` must be non-negative.')
-    if min_fraction_explained is not None:
-        if min_fraction_explained < 0 or min_fraction_explained > 1:
-            raise ValueError('`min_fraction_explained` must be between 0 and 1.')
+    if min_quality is not None:
+        if min_quality < 0 or min_quality > 1:
+            raise ValueError('`min_quality` must be between 0 and 1.')
     if not isinstance(niter,int):
         raise ValueError('Number of iterations must be an integer.')
     if niter < 1:
@@ -777,7 +777,7 @@ def istdeco_decode(
     decoded_table = model.get_reads(
         min_integrated_intensity=min_integrated_intensity,
         min_radius=min_integration_radius,
-        min_fraction_explained=min_fraction_explained,
+        min_quality=min_quality,
         codebook_keys=codebook_keys
     )
 
