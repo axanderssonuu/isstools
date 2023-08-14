@@ -1,6 +1,7 @@
 # ISS Decoding Pipeline
 
-Welcome to the Project Name repository! This document provides instructions for setting up and installing a simple decoding pipeline for in situ sequencing. This repository mainly contains tools used by Wahlby  group for decoding in situ sequencing data.
+
+This repositor provides instructions for setting up and installing a simple decoding pipeline for in situ sequencing. This repository mainly contains tools used by Wahlby  group (Uppsala University) for decoding in situ sequencing data.
 
 ## Getting Started
 
