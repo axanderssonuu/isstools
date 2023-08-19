@@ -20,6 +20,8 @@ test_io.py
 *.hdf5
 *.pkl
 *.csv
+old
+old/
 .vscode/
 
 # Byte-compiled / optimized / DLL files

@@ -18,6 +18,25 @@ class IncompleteDatasetError(Exception):
 
 
 def mip(output_filepattern:str, dataset:ISSDataContainer) -> ISSDataContainer:
+    """
+    Compute Maximum Intensity Projection (MIP) across a dataset and save the result.
+
+    Args:
+        output_filepattern (str): File pattern for saving the MIP images.
+        dataset (ISSDataContainer): The dataset containing images for MIP computation.
+
+    Returns:
+        ISSDataContainer: The data container containing the MIP images.
+
+    Example:
+        ```
+        container = ISSDataContainer()
+        container.add_images_from_filepattern('S{stage}_R{round}_C{channel}.tif')
+        mip_container = mip('mip_round{round}_{channel}.tif', container)
+        ```
+    """
+        
+
     # The iterate dataset allows us to iterate the dataset over stages, rounds and channels.
     for index, small_dataset in dataset.iterate_dataset(iter_stages=True, iter_rounds=True, iter_channels=True):
         # Load the small dataset
@@ -38,13 +57,57 @@ def mip(output_filepattern:str, dataset:ISSDataContainer) -> ISSDataContainer:
     return container
 
 def imwrite(filename:str,data:np.array):
+    """
+    Write a NumPy array as an image file.
+
+    Args:
+        filename (str): Path to the output image file.
+        data (np.array): NumPy array representing the image data.
+
+    """
     rawtiff=Image.fromarray(data)
     rawtiff.save(filename)
 
 def imread(filename:str) -> np.ndarray:
+    """
+    Read an image file into a NumPy array.
+
+    Args:
+        filename (str): Path to the input image file.
+
+    Returns:
+        np.ndarray: NumPy array representing the image data.
+
+    Example:
+        ```
+        image_data = imread('input_image.tif')
+        ```
+    """
     return np.asarray(Image.open(filename))
     
 def project2d(issdataset: ISSDataContainer, project_fun: Callable[[np.ndarray], np.ndarray], output_filepattern: str) -> ISSDataContainer:
+    """
+    Project images using a given projection function and save the results.
+
+    Args:
+        issdataset (ISSDataContainer): The dataset containing images to project.
+        project_fun (Callable[[np.ndarray], np.ndarray]): Function for image projection.
+        output_filepattern (str): File pattern for saving the projected images.
+
+    Returns:
+        ISSDataContainer: The data container containing the projected images.
+
+    Example:
+        ```
+        def my_projection(data):
+            # Perform custom image projection here
+            return data.mean(axis=0)  # Replace with your projection logic
+
+        container = ISSDataContainer()
+        container.add_images_from_filepattern('S{stage}_R{round}_C{channel}.tif')
+        projected_container = project2d(container, my_projection, 'projected_round{round}_{channel}.tif')
+        ```
+    """
     num_stages, num_rounds, num_channels = issdataset.get_dataset_shape()
     for stg in range(num_stages):
         for rnd in range(num_rounds):
@@ -74,7 +137,51 @@ def project2d(issdataset: ISSDataContainer, project_fun: Callable[[np.ndarray], 
     container.add_images_from_filepattern(output_filepattern)
     return container
 
-def stitch_ashlar(output_filepattern: str, issdataset: ISSDataContainer, stage_locations: Dict[int,Tuple[int,int]], reference_channel: int, maximum_shift:int=500, filter_sigma:float=5.0, verbose:bool=True, overlap:float=0.1) -> ISSDataContainer:
+def stitch_ashlar(
+        output_filepattern: str, 
+        issdataset: ISSDataContainer, 
+        stage_locations: Dict[int,Tuple[int,int]], 
+        reference_channel: int, 
+        maximum_shift:int=500, 
+        filter_sigma:float=5.0, 
+        verbose:bool=True, 
+        overlap:float=0.1) -> ISSDataContainer:
+    
+    """
+    Stitch images using the ASHLAR algorithm.
+
+    Args:
+        output_filepattern (str): File pattern for the output stitched images.
+        issdataset (ISSDataContainer): The ISSDataContainer containing images to stitch.
+        stage_locations (Dict[int, Tuple[int, int]]): Dictionary mapping stage indices to (y, x) stage locations.
+        reference_channel (int): Index of the reference fluorescent channel.
+        maximum_shift (int, optional): Maximum expected shift during alignment. Default is 500.
+        filter_sigma (float, optional): Filter sigma for alignment. Default is 5.0.
+        verbose (bool, optional): Whether to print verbose messages. Default is True.
+        overlap (float, optional): Overlap between adjacent tiles. Default is 0.1.
+
+    Returns:
+        ISSDataContainer: The data container containing the stitched images.
+
+    Example:
+        The example below demonstrates how to stitch images using ASHLAR and
+        save them with the specified output file pattern. The `output_filepattern`
+        parameter should contain placeholders like '{round}' and '{cycle}'.
+
+        ```
+        container = ISSDataContainer()
+        container = stitch_ashlar(
+            output_filepattern='stitched_round{round}_{channel}.tif',
+            issdataset=container,
+            stage_locations={...},
+            reference_channel=0,
+            maximum_shift=500,
+            filter_sigma=5.0,
+            verbose=True,
+            overlap=0.1
+        )
+        ```
+    """
 
     import ashlar.scripts.ashlar as ashlar
     from os import mkdir, symlink
@@ -212,7 +319,7 @@ def stitch_ashlar(output_filepattern: str, issdataset: ISSDataContainer, stage_l
 
 
 class TileIterator:
-    def __init__(self, image_data, tile_width, tile_height):
+    def __init__(self, image_data, tile_width, tile_height, squeeze):
         self.image_data = image_data
         self.tile_width = tile_width
         self.tile_height = tile_height
@@ -220,6 +327,7 @@ class TileIterator:
         self.slice_indices = self.calculate_slice_indices()
         self.num_tiles = len(self.slice_indices)
         self.current_tile_index = 0
+        self.squeeze = squeeze
     
     def calculate_slice_indices(self):
         indices = []
@@ -237,8 +345,10 @@ class TileIterator:
         if self.current_tile_index < self.num_tiles:
             slice_indices = self.slice_indices[self.current_tile_index]
             tile = self.image_data[..., slice_indices[0]:slice_indices[1], slice_indices[2]:slice_indices[3]]
+            if self.squeeze:
+                tile = np.squeeze(tile)
             self.current_tile_index += 1
-            return tile, slice_indices
+            return tile, (slice_indices[0], slice_indices[2])
         else:
             raise StopIteration
 
@@ -247,16 +357,28 @@ class ISSDataContainer:
 
         
     def __init__(self):
-
-
-
+        """
+        Initialize an ISSDataContainer instance.
+        """
+        
         self.images = []
         self.image_shape = None  # Store the common image shape
         self.image_dtype = None
         self.loaded_images = None
 
     def add_image(self, image_files:str, stage:int, round:int, channel:int) -> ISSDataContainer:
-   
+        """
+        Add an image to the data container.
+
+        Args:
+            image_files (str): List of image file paths.
+            stage (int): Index of the staging location.
+            round (int): Index of the sequencing round.
+            channel (int): Index of the fluorescent channel.
+
+        Returns:
+            ISSDataContainer: The updated data container instance.
+        """
     
         if not isinstance(image_files, list) or not all(isinstance(file, str) for file in image_files):
             raise ValueError("image_files should be a list of strings.")
@@ -284,6 +406,12 @@ class ISSDataContainer:
         return self
 
     def load(self) -> ISSDataContainer:
+        """
+        Load image data into memory.
+
+        Returns:
+            ISSDataContainer: The updated data container instance.
+        """
 
         for image in self.images:
             # Simulating loading the image into memory
@@ -292,17 +420,44 @@ class ISSDataContainer:
         return self
 
     def unload(self) -> ISSDataContainer:
+        """
+        Unload images from memory.
+
+        Returns:
+            ISSDataContainer: The updated data container instance.
+        """
         
         for image in self.images:
             # Simulating loading the image into memory
             image['loaded'] = False
             self.loaded_images = None
         return self
+    
+
     @property
     def data(self) -> np.ndarray:
+        """
+        Get the loaded image data.
+
+        Returns:
+            np.ndarray: Loaded image data.
+        """
         return self.loaded_images
 
     def select(self, stage:Optional[int]=None, round:Optional[int]=None, channel:Optional[int]=None) -> ISSDataContainer:
+        """
+        Select images based on given criteria.
+
+        Args:
+            stage (Optional[int]): Index of the staging location.
+            round (Optional[int]): Index of the sequencing round.
+            channel (Optional[int]): Index of the fluorescent channel.
+
+        Returns:
+            ISSDataContainer: New data container with selected images.
+
+        """
+                
         selected_images = ISSDataContainer()
 
         if stage is not None and isinstance(stage, int):
@@ -459,9 +614,26 @@ class ISSDataContainer:
         return True
     
 
-    def iterate_tiles(self, tile_width:int, tile_height:int) -> TileIterator:
-  
-                
+    def iterate_tiles(self, tile_width:int, tile_height:int, squeeze: bool = False) -> TileIterator:
+        """
+        Iterate over tiles of loaded images.
+
+        Args:
+            tile_width (int): Width of each tile.
+            tile_height (int): Height of each tile.
+            squeeze  (bool)  : Wether the iterated tiles
+                should be squeezed or not.
+                If set to False, each tile has shape
+                (stages, rounds, channels, z, tile_width, tile_height)
+
+        Returns:
+            TileIterator: Iterator for image tiles. Each iterable 
+            is a tuple with (image_data , image_loc) where
+            image_data is an np.ndarray with height and width set to 
+            tile_width and tile_height and image_loc is a is a tuple
+            with the y and x location of the tile. 
+        """  
+
         if not isinstance(tile_width, int) or tile_width <= 0:
             raise ValueError("tile_width should be a positive integer.")
         if not isinstance(tile_height, int) or tile_height <= 0:
@@ -474,12 +646,23 @@ class ISSDataContainer:
         if self.loaded_images is None:
             raise ValueError("Images are not loaded yet. Call the 'load' method first.")
         
-        return TileIterator(self.loaded_images, tile_width, tile_height)
+        return TileIterator(self.loaded_images, tile_width, tile_height, squeeze)
     
     
 
     def iterate_dataset(self, iter_stages:bool=False, iter_rounds:bool=False, iter_channels:bool=False) -> Generator[Dict, np.ndarray]:
+        """
+        Iterate over the dataset based on given parameters.
 
+        Args:
+            iter_stages (bool): Whether to iterate over stage locations.
+            iter_rounds (bool): Whether to iterate over sequencing rounds.
+            iter_channels (bool): Whether to iterate over fluorescent channels.
+
+        Yields:
+            Dict: Dictionary containing keys for iteration parameters.
+            np.ndarray: Selected images.
+        """
                 
         import itertools
         if not isinstance(iter_stages, bool):
@@ -522,9 +705,34 @@ class ISSDataContainer:
 
 
     def get_common_dtype(self) -> str:
+        """
+        Get the common data type of images.
+
+        Returns:
+            str: Common data type.
+        """
         return self.image_dtype
     
     def add_images_from_filepattern(self, filepattern: str) -> ISSDataContainer:
+        """
+        Add images to the data container based on a file pattern.
+
+        Args:
+            filepattern (str): File pattern for matching image files.
+
+        Returns:
+            ISSDataContainer: The updated data container instance.
+
+        Example:
+            Example below shows how to add images on the form
+            `S{stage}_R{round}_C{channel}.tif` where {stage},
+            {round} and {channel} are placeholders for image files.
+
+            `
+                cnt = ISSDataContainer()
+                cnt.add_images_from_filepattern('S{stage}_R{round}_C{channel}.tif')
+    	    `
+        """
         if not isinstance(filepattern, str):
             raise ValueError("filepattern should be a string.")
         
