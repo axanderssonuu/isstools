@@ -23,7 +23,7 @@ def estimate_fdr(labels, negative_labels, positive_labels) -> float:
 
 class RoundChannelProjector:
     def __init__(self, codebook, crosstalk, tensor_kwargs):
-        self.codebook = torch.tensor(codebook.astype('float32'), **tensor_kwargs).flatten(start_dim=1).T
+        self.codebook = torch.tensor(codebook.astype('float32'), **tensor_kwargs)
         self.codebook_binary = self.codebook.clone()
 
         if crosstalk is not None:
@@ -31,6 +31,8 @@ class RoundChannelProjector:
             for r,c in enumerate(self.crosstalk):
                 self.codebook[:,r,:] = torch.einsum('ci,mi->mc', c, self.codebook[:,r,:])
 
+        self.codebook = self.codebook.flatten(start_dim=1).T
+        self.codebook_binary = self.codebook_binary.flatten(start_dim=1).T
         self.codebook = self.codebook / self.codebook.sum(axis=0, keepdim=True)            
 
     def forward(self, tensor):
@@ -148,13 +150,14 @@ def istdeco_decode(
     codebook:np.ndarray,
     psf_sigma:Tuple[int,int]=(1.5,1.5),
     crosstalk:np.ndarray=None,
-    min_integrated_intensity:float=1000,
+    min_integrated_intensity:float=500,
     niter:int=50,
     lowpass_sigma:Optional[Tuple[int,int]]=(7.0, 7.0),
     device='cpu',
     jitter: float = 0,
     l1_reg = 0,
     l2_reg = 0,
+    radius=2,
     min_correct_spots=3.2
     ):
     """
@@ -171,7 +174,7 @@ def istdeco_decode(
         crosstalk (np.ndarray, optional): Crosstalk matrix of shape (rounds, channels, channels)
             representing the crosstalk between different channels. Defaults to None.
         min_integrated_intensity (float, optional): Minimum integrated intensity threshold
-            for decoding spots. Defaults to 100.
+            for decoding spots. Defaults to 500.
         niter (int, optional): Number of iterations for optimization. Defaults to 50.
         lowpass_sigma (Tuple[int, int], optional): Tuple of integers representing the
             standard deviation of the low-pass filter in both spatial dimensions.
@@ -296,7 +299,7 @@ def istdeco_decode(
     psf_support_scaled = (bh, bw)
 
     Q = _compute_quality(X, Y, B, psf, cb, psf_support_scaled)
-    mask = _nonmaxsuppress(X, 3)
+    mask = _nonmaxsuppress(X, radius)
     X = X * mask
     Q = Q * mask
     
