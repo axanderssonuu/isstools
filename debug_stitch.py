@@ -1,17 +1,32 @@
-from imaging_utils import stitch_ashlar, ISSDataContainer
+# The iterate dataset allows us to iterate the dataset over stages, rounds and channels.
+import numpy as np
+from imaging_utils import imwrite
 from os.path import join
 
-# First we load the miped data
-iss_data_miped = ISSDataContainer()
-iss_data_miped.add_images_from_filepattern(join('MIP','S{stage}_R{round}_C{channel}.tif'))
+from imaging_utils import ISSDataContainer
+
+# Create the container
+issdata = ISSDataContainer()
+
+# Add images
+# join('downloads', 'stage{stage}_rounds{round}_z{z}_channel{channel}.tif')
+pattern = 'decoding_tutorial\\S{stage}_R{round}_C{channel}_Z{z}.tif'
+issdata.add_images_from_filepattern(pattern)
 
 
-from imaging_utils import stitch_ashlar
-stage_locations = {
-    0: (0, 0), 
-    1: (0, 1843), 
-}
 
+for index, small_dataset in issdata.iterate_dataset(iter_stages=True, iter_rounds=True, iter_channels=True):
+    # Load the small dataset
+    small_dataset.load()
+    # Get the image data
+    data = small_dataset.data
+    # MIP the data
+    data = np.squeeze(data).max(axis=0)
+    # Save the data
+    imwrite(join('MIP','S{stage}_R{round}_C{channel}.tif'.format(**index)), data)
+    # Finally, we unload the images (otherwise we might run oom)
+    small_dataset.unload()
 
-# Stitch using ASHLAR
-stitch_ashlar(join('stitched','R{round}_C{channel}.tif'), iss_data_miped, stage_locations, reference_channel=4)
+# Or equivalently ...
+# from ISSDataset import mip
+# mip(join('mip','stage{stage}_round{round}_channel{channel}.tif'), issdata)

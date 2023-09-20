@@ -581,36 +581,44 @@ class ISSDataContainer:
         if not self.images:
             raise IncompleteDatasetError("Dataset is empty.")
         
-        stages_per_round = {}
-        z_planes_per_stage_round_channel = {}
-        
-        for image in self.images:
-            stage = image['stage']
-            rnd = image['round']
-            chn = image['channel']
-            z_planes = len(image['image_files'])
-            if stage not in stages_per_round:
-                stages_per_round[stage] = {rnd: [chn]}
-            else:
-                if rnd not in stages_per_round[stage]:
-                    stages_per_round[stage][rnd] = [chn]
-                else:
-                    stages_per_round[stage][rnd].append(chn)
 
+
+        channels_per_stage = {}
+        rounds_per_stage = {}
+        z_planes_per_stage = {}
+        stages = set({})
+        
         for image in self.images:
             stage = image['stage']
             rnd = image['round']
             chn = image['channel']
-            z_planes = len(image['image_files'])
-            if stage in stages_per_round:
-                if rnd not in stages_per_round[stage] or chn not in stages_per_round[stage][rnd]:
-                    raise IncompleteDatasetError("Dataset is incomplete.")
     
-            if (stage, rnd, chn) in z_planes_per_stage_round_channel:
-                if z_planes != z_planes_per_stage_round_channel[(stage, rnd, chn)]:
-                    raise IncompleteDatasetError("Dataset is incomplete.")
+            if stage not in channels_per_stage:
+                channels_per_stage[stage] = [chn]
+            else:
+                channels_per_stage[stage].append(chn)
+
+            if stage not in rounds_per_stage:
+                rounds_per_stage[stage] = [rnd]
+            else:
+                rounds_per_stage[stage].append(rnd)
+
+            if stage not in z_planes_per_stage:
+                z_planes_per_stage[stage] = len(image['image_files'])
+
+            stages.add(stage)
+
+        num_channels_per_stage = {len(chn) for chn in channels_per_stage.values()}
+        num_rounds_per_stage = {len(rnd) for rnd in rounds_per_stage.values()}
+        num_zplanes_per_stage = {zplanes for zplanes in z_planes_per_stage.values()}
+
+        if num_channels_per_stage != 1:
+            raise IncompleteDatasetError('Found different number of channels for a given stage location.')
+        if num_rounds_per_stage != 1:
+            raise IncompleteDatasetError('Found different number of rounds for a given stage location.')
+        if num_zplanes_per_stage != 1:
+            raise IncompleteDatasetError('Found different number of z-planes for a given stage location.')
        
-        
         return True
     
 
