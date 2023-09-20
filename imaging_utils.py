@@ -8,7 +8,7 @@ import tempfile
 import pathlib
 from PIL import Image
 from typing import Tuple, Sequence, Dict, Generator, Optional, Callable
-
+from os.path import abspath
 Image.MAX_IMAGE_PIXELS = 100000000000000
 
 
@@ -261,7 +261,7 @@ def stitch_ashlar(
         FILES.add('filepattern|'+base_path+f'|pattern={pattern}|overlap={overlap}|pixel_size=1')
 
         # Create the symlink
-        symlink(image['image_files'][0], symlink_path)
+        symlink(abspath(image['image_files'][0]), symlink_path)
 
         # Mark which images in the grid have data
         grid[i, j] = True
