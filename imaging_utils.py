@@ -261,6 +261,9 @@ def stitch_ashlar(
         FILES.add('filepattern|'+base_path+f'|pattern={pattern}|overlap={overlap}|pixel_size=1')
 
         # Create the symlink
+        if os.path.islink(symlink_path):
+            os.unlink(symlink_path)
+        
         symlink(abspath(image['image_files'][0]), symlink_path)
 
         # Mark which images in the grid have data
