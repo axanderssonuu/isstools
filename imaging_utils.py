@@ -234,7 +234,10 @@ def stitch_ashlar(
     gridsz = (ny, nx)
     _, rounds, channels = issdataset.get_dataset_shape()
 
-    temp_path = tempfile.mkdtemp()
+    
+    temp_path = join(output_path, '.ashlar_formatted')
+    if not exists(temp_path):
+        mkdir(temp_path)
     # Create temp data with symlinks
     grid = np.zeros(gridsz, dtype = 'bool')
     FILES = set()
@@ -261,10 +264,12 @@ def stitch_ashlar(
         FILES.add('filepattern|'+base_path+f'|pattern={pattern}|overlap={overlap}|pixel_size=1')
 
         # Create the symlink
-        if os.path.islink(symlink_path):
-            os.unlink(symlink_path)
+        #if os.path.islink(symlink_path):
+        #    os.unlink(symlink_path)
+            
         
-        symlink(abspath(image['image_files'][0]), symlink_path)
+        
+        shutil.copy(abspath(image['image_files'][0]), symlink_path)
 
         # Mark which images in the grid have data
         grid[i, j] = True
@@ -322,15 +327,49 @@ def stitch_ashlar(
 
 
 class TileIterator:
-    def __init__(self, image_data, tile_width, tile_height, squeeze):
-        self.image_data = image_data
+    def __init__(self, container: ISSDataContainer, tile_width, tile_height, squeeze, use_vips):
+        self.image_data = container.loaded_images
         self.tile_width = tile_width
         self.tile_height = tile_height
-        self.image_shape = image_data.shape
+        self.image_shape = container.get_common_image_shape()
+        self.stages, self.rounds, self.channels = container.get_dataset_indices()
         self.slice_indices = self.calculate_slice_indices()
         self.num_tiles = len(self.slice_indices)
         self.current_tile_index = 0
         self.squeeze = squeeze
+        self.use_vips = use_vips
+        self.dtype = container.get_common_dtype()
+
+
+        self.stage2ind = { s : i for i,s in enumerate(self.stages)}
+        self.round2ind = { s : i for i,s in enumerate(self.rounds)}
+        self.channel2ind = { s : i for i,s in enumerate(self.channels)}
+
+        self.ns, self.nr, self.nc = len(self.stages), len(self.rounds), len(self.channels)
+
+
+        if use_vips:
+            import pyvips
+
+            self.nz = len(container.images[0]['image_files'])
+            self.dtype = container.get_common_dtype()
+
+            self.vips_dict = {
+                r : {
+                    c : []
+                    for c in self.channels
+                }
+                for r in self.rounds
+            }
+
+            for image in container.images:
+                for file in image['image_files']:
+
+                    self.vips_dict[image['round']][image['channel']].append(
+                        pyvips.Image.new_from_file(file)
+                    )
+
+     
     
     def calculate_slice_indices(self):
         indices = []
@@ -345,15 +384,39 @@ class TileIterator:
         return self
     
     def __next__(self):
-        if self.current_tile_index < self.num_tiles:
-            slice_indices = self.slice_indices[self.current_tile_index]
-            tile = self.image_data[..., slice_indices[0]:slice_indices[1], slice_indices[2]:slice_indices[3]]
-            if self.squeeze:
-                tile = np.squeeze(tile)
-            self.current_tile_index += 1
-            return tile, (slice_indices[0], slice_indices[2])
+        if not self.use_vips:
+            if self.current_tile_index < self.num_tiles:
+                slice_indices = self.slice_indices[self.current_tile_index]
+                tile = self.image_data[..., slice_indices[0]:slice_indices[1], slice_indices[2]:slice_indices[3]]
+                if self.squeeze:
+                    tile = np.squeeze(tile)
+                self.current_tile_index += 1
+                return tile, (slice_indices[0], slice_indices[2])
+            else:
+                raise StopIteration
         else:
-            raise StopIteration
+            if self.current_tile_index < self.num_tiles:
+                slice_indices = self.slice_indices[self.current_tile_index]
+                h, w = slice_indices[1] - slice_indices[0], slice_indices[3] - slice_indices[2] 
+                tile = np.zeros((self.ns, self.nr, self.nc, self.nz, h, w), dtype=self.dtype)
+                for ir, r in enumerate(self.rounds):
+                    for ic, c in enumerate(self.channels):
+                        for iz, vips_image in enumerate(self.vips_dict[r][c]): 
+                            tile_slice = vips_image.crop(slice_indices[1], slice_indices[0], w, h)
+                            tile_slice_np = np.ndarray(
+                                buffer=tile_slice.write_to_memory(),
+                                dtype=self.dtype,
+                                shape=[h, w, tile_slice.bands]
+                            )
+
+                            tile[0, ir, ic, iz, :, :] = tile_slice_np.squeeze()
+                if self.squeeze:
+                    tile = np.squeeze(tile)
+                self.current_tile_index += 1
+                return tile, (slice_indices[0], slice_indices[2])
+            else:
+                raise StopIteration
+
 
 
 class ISSDataContainer:
@@ -615,17 +678,17 @@ class ISSDataContainer:
         num_rounds_per_stage = {len(rnd) for rnd in rounds_per_stage.values()}
         num_zplanes_per_stage = {zplanes for zplanes in z_planes_per_stage.values()}
 
-        if num_channels_per_stage != 1:
+        if len(num_channels_per_stage) != 1:
             raise IncompleteDatasetError('Found different number of channels for a given stage location.')
-        if num_rounds_per_stage != 1:
+        if len(num_rounds_per_stage) != 1:
             raise IncompleteDatasetError('Found different number of rounds for a given stage location.')
-        if num_zplanes_per_stage != 1:
+        if len(num_zplanes_per_stage) != 1:
             raise IncompleteDatasetError('Found different number of z-planes for a given stage location.')
        
         return True
     
 
-    def iterate_tiles(self, tile_width:int, tile_height:int, squeeze: bool = False) -> TileIterator:
+    def iterate_tiles(self, tile_width:int, tile_height:int, squeeze: bool = False, use_vips: bool = False) -> TileIterator:
         """
         Iterate over tiles of loaded images.
 
@@ -636,6 +699,11 @@ class ISSDataContainer:
                 should be squeezed or not.
                 If set to False, each tile has shape
                 (stages, rounds, channels, z, tile_width, tile_height)
+            use_vips (bool) : Wether to load the data using Vips.
+                Vips allow us to read image data without explicitly
+                loading all image files into memory at once.
+                This dramatically reduces memory at the expense
+                of longer loading time.
 
         Returns:
             TileIterator: Iterator for image tiles. Each iterable 
@@ -654,10 +722,11 @@ class ISSDataContainer:
         if num_staegs != 1:
             raise ValueError("The number of stages should be 1 for iterating over tiles.")
         
-        if self.loaded_images is None:
-            raise ValueError("Images are not loaded yet. Call the 'load' method first.")
-        
-        return TileIterator(self.loaded_images, tile_width, tile_height, squeeze)
+        if not use_vips:
+            if self.loaded_images is None:
+                raise ValueError("Images are not loaded yet. Call the 'load' method first.")
+            
+        return TileIterator(self, tile_width, tile_height, squeeze, use_vips)
     
     
 
@@ -724,12 +793,13 @@ class ISSDataContainer:
         """
         return self.image_dtype
     
-    def add_images_from_filepattern(self, filepattern: str) -> ISSDataContainer:
+    def add_images_from_filepattern(self, filepattern: str, silent: bool = False) -> ISSDataContainer:
         """
         Add images to the data container based on a file pattern.
 
         Args:
             filepattern (str): File pattern for matching image files.
+            silent (bool): Whether to print a message for each tile added.
 
         Returns:
             ISSDataContainer: The updated data container instance.
@@ -784,13 +854,37 @@ class ISSDataContainer:
                         if os.path.exists(filename):
                             filenames.append(filename)                    
                     self.add_image(filenames, stg, rnd, chn)
-                    print(f"Added {filename}. Stage: {stg}, Round: {rnd}, Channel: {chn}")
+                    if not silent:
+                        print(f"Added {filename}. Stage: {stg}, Round: {rnd}, Channel: {chn}")
 
 
         return self
 
 if __name__ == '__main__':
     # Load ISS data
+
+    from imaging_utils import stitch_ashlar, ISSDataContainer
+    from os.path import join
+    
+    issdata = ISSDataContainer().add_images_from_filepattern(join('decoding_tutorial_stitched','R{round}_C{channel}.tif'))
+    for tile, origin in issdata.iterate_tiles(tile_height=512, tile_width=512, squeeze=True, use_vips=True):
+        print(tile.shape)
+
+    '''
+    # First we load the miped data
+    iss_data_miped = ISSDataContainer()
+    iss_data_miped.add_images_from_filepattern(join('decoding_tutorial_2d','S{stage}_R{round}_C{channel}.tif'))
+
+    stage_locations = {
+        0: (0, 0), 
+        1: (0, 1843), 
+    }
+
+    # Stitch using ASHLAR
+    stitch_ashlar(join('decoding_tutorial_stitched','R{round}_C{channel}.tif'), iss_data_miped, stage_locations, reference_channel=4)
+    '''
+    
+    '''
     container = ISSDataContainer()
     container.add_images_from_filepattern('C:\\Users\\Axel\\Documents\\ISTDECO\\downloads\\liver_2d\\liver_2d_locid{stage}_r{round}_c0{channel}.tif')
     container.load()
@@ -832,3 +926,4 @@ if __name__ == '__main__':
         reference_channel=4
     )
 
+    '''

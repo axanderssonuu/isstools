@@ -9,6 +9,11 @@ CRCLM/
 MIP
 stitched
 syntehtic_images
+decoding_tutorial
+decoding_tutorial_2d
+decoding_tutorial_stitched
+test.tif
+
 decode_batch2.py
 *.json
 TODO.md
