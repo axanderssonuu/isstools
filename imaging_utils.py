@@ -402,7 +402,8 @@ class TileIterator:
                 for ir, r in enumerate(self.rounds):
                     for ic, c in enumerate(self.channels):
                         for iz, vips_image in enumerate(self.vips_dict[r][c]): 
-                            tile_slice = vips_image.crop(slice_indices[1], slice_indices[0], w, h)
+                            tile_slice = vips_image.crop(slice_indices[2], slice_indices[0], w, h)
+
                             tile_slice_np = np.ndarray(
                                 buffer=tile_slice.write_to_memory(),
                                 dtype=self.dtype,

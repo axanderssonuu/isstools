@@ -33,7 +33,7 @@ class RoundChannelProjector:
 
         self.codebook = self.codebook.flatten(start_dim=1).T
         self.codebook_binary = self.codebook_binary.flatten(start_dim=1).T
-        self.codebook = self.codebook / self.codebook.sum(axis=0, keepdim=True)            
+        #self.codebook = self.codebook * self.codebook.sum(axis=0, keepdim=True)            
 
     def forward(self, tensor):
         m, ny, nx = tensor.shape
@@ -51,7 +51,8 @@ def load_gaussian(n:int, tensor_kwargs, sigma:float=1.0,s:float=1.0):
         return 1
 
     ns = int(np.ceil(n*s)); sigmas = sigma*s
-    x = torch.linspace(0,ns-1,n); xs = torch.arange(ns)
+    x = torch.linspace(0,ns-1,n, **tensor_kwargs); xs = torch.arange(ns, **tensor_kwargs)
+
     b = torch.exp(-0.5*(xs.reshape((-1,1)) - x)**2/sigmas**2).float()
     b = b / b.sum(axis=1,keepdim=True)
 
@@ -155,7 +156,7 @@ def istdeco_decode(
     lowpass_sigma:Optional[Tuple[int,int]]=(7.0, 7.0),
     device='cpu',
     jitter: float = 0,
-    l1_reg = 0,
+    l1_reg = 0.1,
     l2_reg = 0,
     radius=2,
     min_correct_spots=3.2
@@ -200,7 +201,9 @@ def istdeco_decode(
         )
         ```
     """
-   
+    if image_data.ndim != 4:
+        raise ValueError(f'Input data must be of shape (num_rounds, num_channels, height, width)')
+
 
     _SMALL_CONSTANT = 1e-6
 
@@ -251,6 +254,8 @@ def istdeco_decode(
     num_codes = codebook.shape[0]
 
     # Create forward and back projector across rounds and channels
+    normalizer = codebook.sum(axis=(1,2), keepdims=True)
+    codebook = codebook * normalizer
     cb = RoundChannelProjector(
         codebook,
         crosstalk,
@@ -291,6 +296,8 @@ def istdeco_decode(
                 Y / Y_pred
             )
         ) / scale
+
+    X = X * normalizer
 
     # Extract barcodes
     ## Integrate intensities in spatial neighborhoods
