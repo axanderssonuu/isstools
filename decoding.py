@@ -297,7 +297,7 @@ def istdeco_decode(
             )
         ) / scale
 
-    X = X * normalizer
+    X = X * torch.tensor(normalizer, **tensor_args)
 
     # Extract barcodes
     ## Integrate intensities in spatial neighborhoods
