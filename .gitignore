@@ -4,6 +4,7 @@ downloads/
 stitched_ashlar/
 stitched_pc/
 deconvolved/
+datasets/
 CRCLM
 CRCLM/
 MIP
@@ -11,8 +12,14 @@ stitched
 syntehtic_images
 decoding_tutorial
 decoding_tutorial_2d
+datasets\\decoding_tutorial
+datasets\\iss-mouse
+datasets\\iss-mouse-cropped
+.tissuumaps
 decoding_tutorial_stitched
 test.tif
+trash
+
 
 decode_batch2.py
 *.json

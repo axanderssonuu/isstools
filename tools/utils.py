@@ -867,11 +867,7 @@ if __name__ == '__main__':
     from imaging_utils import stitch_ashlar, ISSDataContainer
     from os.path import join
     
-    issdata = ISSDataContainer().add_images_from_filepattern(join('decoding_tutorial_stitched','R{round}_C{channel}.tif'))
-    for tile, origin in issdata.iterate_tiles(tile_height=512, tile_width=512, squeeze=True, use_vips=True):
-        print(tile.shape)
 
-    '''
     # First we load the miped data
     iss_data_miped = ISSDataContainer()
     iss_data_miped.add_images_from_filepattern(join('decoding_tutorial_2d','S{stage}_R{round}_C{channel}.tif'))
@@ -883,9 +879,7 @@ if __name__ == '__main__':
 
     # Stitch using ASHLAR
     stitch_ashlar(join('decoding_tutorial_stitched','R{round}_C{channel}.tif'), iss_data_miped, stage_locations, reference_channel=4)
-    '''
-    
-    '''
+ 
     container = ISSDataContainer()
     container.add_images_from_filepattern('C:\\Users\\Axel\\Documents\\ISTDECO\\downloads\\liver_2d\\liver_2d_locid{stage}_r{round}_c0{channel}.tif')
     container.load()
@@ -927,4 +921,4 @@ if __name__ == '__main__':
         reference_channel=4
     )
 
-    '''
+    
