@@ -32,6 +32,7 @@ test_io.py
 *.hdf5
 *.pkl
 *.csv
+decode_mouse.py
 old
 old/
 .vscode/
